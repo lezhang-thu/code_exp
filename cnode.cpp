@@ -23,6 +23,7 @@ CNode::CNode() {
 
     this->visit_count = 0;
     this->value_sum = 0;
+    this->ptr_node_pool = nullptr;
 }
 
 CNode::CNode(float prior, int action_num, std::vector<CNode> *ptr_node_pool) {
@@ -32,6 +33,7 @@ CNode::CNode(float prior, int action_num, std::vector<CNode> *ptr_node_pool) {
     this->visit_count = 0;
     this->value_sum = 0;
     this->best_action = -1;
+    this->ptr_node_pool = ptr_node_pool;
 }
 
 CNode::~CNode() {}
