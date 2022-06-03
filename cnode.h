@@ -82,7 +82,7 @@ void cback_propagate(std::vector<CNode *> &search_path,
 void cbatch_back_propagate(float discount, const std::vector<float> &values,
                            const std::vector<std::vector<float>> &policies,
                            tools::CMinMaxStatsList *min_max_stats_lst,
-                           CSearchResults &results, );
+                           CSearchResults &results);
 int cselect_child(CNode *root, tools::CMinMaxStats &min_max_stats,
                   int pb_c_base, float pb_c_init, float discount, float mean_q);
 float cucb_score(CNode *child, tools::CMinMaxStats &min_max_stats,

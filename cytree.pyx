@@ -6,12 +6,6 @@ from libcpp.vector cimport vector
 from libc.stdlib cimport malloc, free
 from libcpp.list cimport list as cpplist
 
-import numpy as np
-cimport numpy as np
-
-ctypedef np.npy_float FLOAT
-ctypedef np.npy_intp INTP
-
 
 cdef class MinMaxStatsList:
     cdef CMinMaxStatsList *cmin_max_stats_lst
@@ -50,7 +44,7 @@ cdef class Roots:
         self.roots[0].prepare(root_exploration_fraction, noises, policy_logits_pool)
 
     def prepare_no_noise(self, list policy_logits_pool):
-        self.roots[0].prepare_no_noise(value_prefix_pool, policy_logits_pool)
+        self.roots[0].prepare_no_noise(policy_logits_pool)
 
     def get_trajectories(self):
         return self.roots[0].get_trajectories()
@@ -76,9 +70,6 @@ cdef class Node:
     cdef CNode cnode
 
     def __cinit__(self):
-        pass
-
-    def __cinit__(self, float prior, int action_num):
         pass
 
     def expand(self, list policy_logits):
