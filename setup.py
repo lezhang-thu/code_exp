@@ -19,6 +19,5 @@ setup(cmdclass={'build_ext': BuildExt},
       ext_modules=cythonize(
           Extension('cytree',
                     sources=['cytree.pyx'],
-                    language='c++',
-                    extra_compile_args=['-O3'],
+                    extra_compile_args=['-O3', '-std=c++11'],
                     include_dirs=[])))
