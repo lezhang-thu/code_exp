@@ -29,6 +29,9 @@ cdef extern from "cnode.cpp":
 
 
 cdef extern from "cnode.h" namespace "tree":
+    cdef cppclass CNode:
+        CNode() except +
+
     cdef cppclass CRoots:
         CRoots() except +
         CRoots(int root_num, int action_num, int pool_size) except +
