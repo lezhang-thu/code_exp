@@ -30,21 +30,20 @@ cdef extern from "cnode.cpp":
 
 cdef extern from "cnode.h" namespace "tree":
     cdef cppclass CNode:
-        CNode() except +
+        pass
 
     cdef cppclass CRoots:
-        CRoots() except +
-        CRoots(int root_num, int action_num, int pool_size) except +
-        int root_num, action_num, pool_size
-        vector[CNode] roots
-        vector[vector[CNode]] node_pools
+        CRoots(int root_num, int action_num) except +
+        int root_num, action_num
+        vector[CNode*] roots
 
         void prepare(float root_exploration_fraction, const vector[vector[float]] &noises, const vector[vector[float]] &policies)
         void prepare_no_noise(const vector[vector[float]] &policies)
-        void clear()
         vector[vector[int]] get_trajectories()
         vector[vector[int]] get_distributions()
         vector[float] get_values()
+        void update_with_move(int root_idx, int act_idx)
+        void release_forest()
 
     cdef cppclass CSearchResults:
         CSearchResults() except +

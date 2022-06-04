@@ -11,19 +11,15 @@
 #include <time.h>
 #include <vector>
 
-const int DEBUG_MODE = 0;
-
 namespace tree {
 
 class CNode {
   public:
     int visit_count, action_num, best_action;
     float prior, value_sum;
-    std::vector<int> children_index;
-    std::vector<CNode> *ptr_node_pool;
+    std::vector<CNode *> children;
 
-    CNode();
-    CNode(float prior, int action_num, std::vector<CNode> *ptr_node_pool);
+    CNode(float prior, int action_num);
     ~CNode();
 
     void expand(const std::vector<float> &policy_logits);
@@ -39,26 +35,26 @@ class CNode {
     std::vector<int> get_trajectory();
     std::vector<int> get_children_distribution();
     CNode *get_child(int action);
+    void release_tree();
 };
 
 class CRoots {
   public:
-    int root_num, action_num, pool_size;
-    std::vector<CNode> roots;
-    std::vector<std::vector<CNode>> node_pools;
+    int root_num, action_num;
+    std::vector<CNode *> roots;
 
-    CRoots();
-    CRoots(int root_num, int action_num, int pool_size);
+    CRoots(int root_num, int action_num);
     ~CRoots();
 
     void prepare(float root_exploration_fraction,
                  const std::vector<std::vector<float>> &noises,
                  const std::vector<std::vector<float>> &policies);
     void prepare_no_noise(const std::vector<std::vector<float>> &policies);
-    void clear();
     std::vector<std::vector<int>> get_trajectories();
     std::vector<std::vector<int>> get_distributions();
     std::vector<float> get_values();
+    void update_with_move(int root_idx, int act_idx);
+    void release_forest();
 };
 
 class CSearchResults {
@@ -67,7 +63,7 @@ class CSearchResults {
     std::vector<int> search_lens;
     std::vector<CNode *> nodes;
     std::vector<std::vector<CNode *>> search_paths;
-
+    
     CSearchResults();
     CSearchResults(int num);
     ~CSearchResults();

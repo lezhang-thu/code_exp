@@ -16,37 +16,22 @@ CSearchResults::~CSearchResults() {}
 
 //*********************************************************
 
-CNode::CNode() {
-    this->prior = 0;
-    this->action_num = 0;
-    this->best_action = -1;
-
+CNode::CNode(float prior, int action_num) {
     this->visit_count = 0;
-    this->value_sum = 0;
-    this->ptr_node_pool = nullptr;
-}
-
-CNode::CNode(float prior, int action_num, std::vector<CNode> *ptr_node_pool) {
-    this->prior = prior;
     this->action_num = action_num;
-
-    this->visit_count = 0;
-    this->value_sum = 0;
     this->best_action = -1;
-    this->ptr_node_pool = ptr_node_pool;
+
+    this->prior = prior;
+    this->value_sum = 0;
 }
 
 CNode::~CNode() {}
 
 void CNode::expand(const std::vector<float> &policy_priors) {
     int action_num = this->action_num;
-    std::vector<CNode> *ptr_node_pool = this->ptr_node_pool;
+    this->children.reserve(action_num);
     for (int a = 0; a < action_num; ++a) {
-        int index = ptr_node_pool->size();
-        this->children_index.push_back(index);
-
-        ptr_node_pool->push_back(
-            CNode(policy_priors[a], action_num, ptr_node_pool));
+        this->children.push_back(new CNode(policy_priors[a], action_num));
     }
 }
 
@@ -81,14 +66,7 @@ float CNode::get_mean_q(int isRoot, float parent_q, float discount) {
 
 void CNode::print_out() { return; }
 
-int CNode::expanded() {
-    int child_num = this->children_index.size();
-    if (child_num > 0) {
-        return 1;
-    } else {
-        return 0;
-    }
-}
+int CNode::expanded() { return this->children.size() > 0; }
 
 float CNode::value() {
     float true_value = 0.0;
@@ -125,32 +103,37 @@ std::vector<int> CNode::get_children_distribution() {
     return distribution;
 }
 
-CNode *CNode::get_child(int action) {
-    int index = this->children_index[action];
-    return &((*(this->ptr_node_pool))[index]);
+CNode *CNode::get_child(int action) { return this->children[action]; }
+
+void CNode::release_tree() {
+    std::stack<CNode *> node_stack;
+    node_stack.push(this);
+    while (node_stack.size() > 0) {
+        CNode *node = node_stack.top();
+        node_stack.pop();
+
+        if (node->expanded()) {
+            for (int a = 0; a < node->action_num; ++a) {
+                CNode *child = node->get_child(a);
+                if (child != nullptr)
+                    node_stack.push(child);
+            }
+        }
+        delete node;
+    }
 }
 
 //*********************************************************
 
-CRoots::CRoots() {
-    this->root_num = 0;
-    this->action_num = 0;
-    this->pool_size = 0;
-}
-
-CRoots::CRoots(int root_num, int action_num, int pool_size) {
+CRoots::CRoots(int root_num, int action_num) {
     this->root_num = root_num;
     this->action_num = action_num;
-    this->pool_size = pool_size;
-
-    this->node_pools.reserve(root_num);
     this->roots.reserve(root_num);
 
     for (int i = 0; i < root_num; ++i) {
-        this->node_pools.push_back(std::vector<CNode>());
-        this->node_pools[i].reserve(pool_size);
-
-        this->roots.push_back(CNode(0, action_num, &this->node_pools[i]));
+        // REFER:
+        // https://github.com/lezhang-thu/AlphaZero_Gomoku/blob/master/mcts_alphaZero.py#L101
+        this->roots.push_back(new CNode(1.0, action_num));
     }
 }
 
@@ -160,25 +143,18 @@ void CRoots::prepare(float root_exploration_fraction,
                      const std::vector<std::vector<float>> &noises,
                      const std::vector<std::vector<float>> &policies) {
     for (int i = 0; i < this->root_num; ++i) {
-        this->roots[i].expand(policies[i]);
-        this->roots[i].add_exploration_noise(root_exploration_fraction,
-                                             noises[i]);
-
-        this->roots[i].visit_count += 1;
+        this->roots[i]->expand(policies[i]);
+        this->roots[i]->add_exploration_noise(root_exploration_fraction,
+                                              noises[i]);
+        this->roots[i]->visit_count += 1;
     }
 }
 
 void CRoots::prepare_no_noise(const std::vector<std::vector<float>> &policies) {
     for (int i = 0; i < this->root_num; ++i) {
-        this->roots[i].expand(policies[i]);
-
-        this->roots[i].visit_count += 1;
+        this->roots[i]->expand(policies[i]);
+        this->roots[i]->visit_count += 1;
     }
-}
-
-void CRoots::clear() {
-    this->node_pools.clear();
-    this->roots.clear();
 }
 
 std::vector<std::vector<int>> CRoots::get_trajectories() {
@@ -186,7 +162,7 @@ std::vector<std::vector<int>> CRoots::get_trajectories() {
     trajs.reserve(this->root_num);
 
     for (int i = 0; i < this->root_num; ++i) {
-        trajs.push_back(this->roots[i].get_trajectory());
+        trajs.push_back(this->roots[i]->get_trajectory());
     }
     return trajs;
 }
@@ -196,7 +172,7 @@ std::vector<std::vector<int>> CRoots::get_distributions() {
     distributions.reserve(this->root_num);
 
     for (int i = 0; i < this->root_num; ++i) {
-        distributions.push_back(this->roots[i].get_children_distribution());
+        distributions.push_back(this->roots[i]->get_children_distribution());
     }
     return distributions;
 }
@@ -204,9 +180,23 @@ std::vector<std::vector<int>> CRoots::get_distributions() {
 std::vector<float> CRoots::get_values() {
     std::vector<float> values;
     for (int i = 0; i < this->root_num; ++i) {
-        values.push_back(this->roots[i].value());
+        values.push_back(this->roots[i]->value());
     }
     return values;
+}
+
+// REFER:
+// https://github.com/lezhang-thu/AlphaZero_Gomoku/blob/master/mcts_alphaZero.py#L157
+void CRoots::update_with_move(int root_idx, int act_idx) {
+    CNode *root = this->roots[root_idx];
+    this->roots[root_idx] = root->get_child(act_idx);
+    root->children[act_idx] = nullptr;
+    root->release_tree();
+}
+
+void CRoots::release_forest() {
+    for (int i = 0; i < this->root_num; ++i)
+        this->roots[i]->release_tree();
 }
 
 //*********************************************************
@@ -331,7 +321,7 @@ void cbatch_traverse(CRoots *roots, int pb_c_base, float pb_c_init,
     float parent_q = 0.0;
     results.search_lens = std::vector<int>();
     for (int i = 0; i < results.num; ++i) {
-        CNode *node = &(roots->roots[i]);
+        CNode *node = roots->roots[i];
         int is_root = 1;
         int search_len = 0;
         results.search_paths[i].push_back(node);
