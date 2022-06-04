@@ -38,32 +38,15 @@ CNode::CNode(float prior, int action_num, std::vector<CNode> *ptr_node_pool) {
 
 CNode::~CNode() {}
 
-void CNode::expand(const std::vector<float> &policy_logits) {
+void CNode::expand(const std::vector<float> &policy_priors) {
     int action_num = this->action_num;
-    float temp_policy;
-    float policy_sum = 0.0;
-    float policy[action_num];
-    float policy_max = FLOAT_MIN;
-    for (int a = 0; a < action_num; ++a) {
-        if (policy_max < policy_logits[a]) {
-            policy_max = policy_logits[a];
-        }
-    }
-
-    for (int a = 0; a < action_num; ++a) {
-        temp_policy = exp(policy_logits[a] - policy_max);
-        policy_sum += temp_policy;
-        policy[a] = temp_policy;
-    }
-
-    float prior;
     std::vector<CNode> *ptr_node_pool = this->ptr_node_pool;
     for (int a = 0; a < action_num; ++a) {
-        prior = policy[a] / policy_sum;
         int index = ptr_node_pool->size();
         this->children_index.push_back(index);
 
-        ptr_node_pool->push_back(CNode(prior, action_num, ptr_node_pool));
+        ptr_node_pool->push_back(
+            CNode(policy_priors[a], action_num, ptr_node_pool));
     }
 }
 
@@ -272,7 +255,11 @@ void cbatch_back_propagate(float discount, const std::vector<float> &values,
                            tools::CMinMaxStatsList *min_max_stats_lst,
                            CSearchResults &results) {
     for (int i = 0; i < results.num; ++i) {
-        results.nodes[i]->expand(policies[i]);
+        // NOT end of game
+        // REFER:
+        // https://github.com/lezhang-thu/AlphaZero_Gomoku/blob/master/mcts_alphaZero.py#L119-L137
+        if (policies[i][0] != -1.0)
+            results.nodes[i]->expand(policies[i]);
         cback_propagate(results.search_paths[i],
                         min_max_stats_lst->stats_lst[i], values[i], discount);
     }
@@ -324,8 +311,10 @@ float cucb_score(CNode *child, tools::CMinMaxStats &min_max_stats,
     }
 
     value_score = min_max_stats.normalize(value_score);
-		if (value_score < 0) value_score = 0;
-		if (value_score > 1) value_score = 1;
+    if (value_score < 0)
+        value_score = 0;
+    if (value_score > 1)
+        value_score = 1;
 
     float ucb_value = prior_score + value_score;
     return ucb_value;

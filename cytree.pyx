@@ -1,7 +1,7 @@
 # distutils: language=c++
 import ctypes
 cimport cython
-from ctree cimport CMinMaxStatsList, CNode, CRoots, CSearchResults, cbatch_back_propagate, cbatch_traverse
+from ctree cimport CMinMaxStatsList, CRoots, CSearchResults, cbatch_back_propagate, cbatch_traverse
 from libcpp.vector cimport vector
 from libc.stdlib cimport malloc, free
 from libcpp.list cimport list as cpplist
@@ -66,18 +66,7 @@ cdef class Roots:
         return self.root_num
 
 
-cdef class Node:
-    cdef CNode cnode
-
-    def __cinit__(self):
-        pass
-
-    def expand(self, list policy_logits):
-        cdef vector[float] cpolicy = policy_logits
-        self.cnode.expand(cpolicy)
-
 def batch_back_propagate(float discount, list values, list policies, MinMaxStatsList min_max_stats_lst, ResultsWrapper results):
-    cdef int i
     cdef vector[float] cvalues = values
     cdef vector[vector[float]] cpolicies = policies
 

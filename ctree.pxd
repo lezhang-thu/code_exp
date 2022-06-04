@@ -29,24 +29,6 @@ cdef extern from "cnode.cpp":
 
 
 cdef extern from "cnode.h" namespace "tree":
-    cdef cppclass CNode:
-        CNode() except +
-        CNode(float prior, int action_num, vector[CNode]* ptr_node_pool) except +
-        int visit_count, action_num, best_action
-        float prior, value_sum
-        vector[int] children_index;
-        vector[CNode]* ptr_node_pool;
-
-        void expand(vector[float] policy_logits)
-        void add_exploration_noise(float exploration_fraction, vector[float] noises)
-        float get_mean_q(int isRoot, float parent_q, float discount)
-
-        int expanded()
-        float value()
-        vector[int] get_trajectory()
-        vector[int] get_children_distribution()
-        CNode* get_child(int action)
-
     cdef cppclass CRoots:
         CRoots() except +
         CRoots(int root_num, int action_num, int pool_size) except +
