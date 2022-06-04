@@ -63,7 +63,7 @@ class CSearchResults {
     std::vector<int> search_lens;
     std::vector<CNode *> nodes;
     std::vector<std::vector<CNode *>> search_paths;
-    
+
     CSearchResults();
     CSearchResults(int num);
     ~CSearchResults();
