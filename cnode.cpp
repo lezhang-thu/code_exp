@@ -69,13 +69,7 @@ void CNode::print_out() { return; }
 int CNode::expanded() { return this->children.size() > 0; }
 
 float CNode::value() {
-    float true_value = 0.0;
-    if (this->visit_count == 0) {
-        return true_value;
-    } else {
-        true_value = this->value_sum / this->visit_count;
-        return true_value;
-    }
+    return this->visit_count == 0 ? 0.0 : this->value_sum / this->visit_count;
 }
 
 std::vector<int> CNode::get_trajectory() {
@@ -226,14 +220,12 @@ void update_tree_q(CNode *root, tools::CMinMaxStats &min_max_stats,
 void cback_propagate(std::vector<CNode *> &search_path,
                      tools::CMinMaxStats &min_max_stats, float value,
                      float discount) {
-    float bootstrap_value = value;
-    int path_len = search_path.size();
-    for (int i = path_len - 1; i >= 0; --i) {
+    for (int i = search_path.size() - 1; i >= 0; --i) {
         CNode *node = search_path[i];
-        node->value_sum += bootstrap_value;
+        node->value_sum += value;
         node->visit_count += 1;
 
-        bootstrap_value *= discount;
+        value *= discount;
     }
     min_max_stats.clear();
     CNode *root = search_path[0];
@@ -249,7 +241,7 @@ void cbatch_back_propagate(float discount, const std::vector<float> &values,
         // REFER:
         // https://github.com/lezhang-thu/AlphaZero_Gomoku/blob/master/mcts_alphaZero.py#L119-L137
         if (policies[i][0] != -1.0)
-            results.nodes[i]->expand(policies[i]);
+            results.search_paths[i].back()->expand(policies[i]);
         cback_propagate(results.search_paths[i],
                         min_max_stats_lst->stats_lst[i], values[i], discount);
     }
@@ -339,8 +331,11 @@ void cbatch_traverse(CRoots *roots, int pb_c_base, float pb_c_init,
             results.search_paths[i].push_back(node);
             search_len += 1;
         }
+        // REFER:
+        // https://github.com/lezhang-thu/AlphaZero_Gomoku/blob/master/mcts_alphaZero.py#L137
+        // `value_sum / visit_count` is v(s) for the node (i.e. state s)
+        results.search_paths[i].push_back(node);
         results.search_lens.push_back(search_len);
-        results.nodes.push_back(node);
     }
 }
 
