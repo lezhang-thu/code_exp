@@ -48,9 +48,7 @@ void CNode::add_exploration_noise(float exploration_fraction,
     }
 }
 
-float CNode::get_mean_q(int isRoot, float parent_q, float discount) {
-    if (isRoot)
-        return 0.0;
+float CNode::get_mean_q(float parent_q, float discount) {
     float total_unsigned_q = 0.0;
     int total_visits = 0;
     for (int a = 0; a < this->action_num; ++a) {
@@ -171,6 +169,9 @@ std::vector<std::vector<int>> CRoots::get_distributions() {
     return distributions;
 }
 
+// MIGHT BE of NO USE
+// captioning seq. is of len 20
+// MIGHT use the final CIDEr score
 std::vector<float> CRoots::get_values() {
     std::vector<float> values;
     for (int i = 0; i < this->root_num; ++i) {
@@ -197,6 +198,7 @@ void CRoots::release_forest() {
 
 void update_tree_q(CNode *root, tools::CMinMaxStats &min_max_stats,
                    float discount) {
+    // only consider `node->value()` for all internal nodes
     std::stack<CNode *> node_stack;
     node_stack.push(root);
     while (node_stack.size() > 0) {
@@ -255,6 +257,8 @@ int cselect_child(CNode *root, tools::CMinMaxStats &min_max_stats,
     std::vector<int> max_index_lst;
     for (int a = 0; a < root->action_num; ++a) {
         CNode *child = root->get_child(a);
+        // should be `root->visit_count - 1`
+        // in AlphaZero it is `parent.visit_count`
         float temp_score =
             cucb_score(child, min_max_stats, mean_q, root->visit_count - 1,
                        pb_c_base, pb_c_init, discount);
@@ -271,8 +275,7 @@ int cselect_child(CNode *root, tools::CMinMaxStats &min_max_stats,
 
     int action = 0;
     if (max_index_lst.size() > 0) {
-        int rand_index = rand() % max_index_lst.size();
-        action = max_index_lst[rand_index];
+        action = max_index_lst[rand() % max_index_lst.size()];
     }
     return action;
 }
@@ -283,7 +286,7 @@ float cucb_score(CNode *child, tools::CMinMaxStats &min_max_stats,
     float pb_c = 0.0, prior_score = 0.0, value_score = 0.0;
     pb_c = log((total_children_visit_counts + pb_c_base + 1) / pb_c_base) +
            pb_c_init;
-    pb_c *= (sqrt(total_children_visit_counts) / (child->visit_count + 1));
+    pb_c *= sqrt(total_children_visit_counts) / (child->visit_count + 1);
 
     prior_score = pb_c * child->prior;
     if (child->visit_count == 0) {
@@ -310,32 +313,25 @@ void cbatch_traverse(CRoots *roots, int pb_c_base, float pb_c_init,
     gettimeofday(&t1, NULL);
     srand(t1.tv_usec);
 
-    float parent_q = 0.0;
-    results.search_lens = std::vector<int>();
     for (int i = 0; i < results.num; ++i) {
         CNode *node = roots->roots[i];
-        int is_root = 1;
-        int search_len = 0;
         results.search_paths[i].push_back(node);
 
+        // invariant: `mean_q` is \hat{Q}(s) for `node`
+        float mean_q = 0.0;
         while (node->expanded()) {
-            float mean_q = node->get_mean_q(is_root, parent_q, discount);
-            is_root = 0;
-            parent_q = mean_q;
-
             int action = cselect_child(node, min_max_stats_lst->stats_lst[i],
                                        pb_c_base, pb_c_init, discount, mean_q);
             node->best_action = action;
             // next
             node = node->get_child(action);
+            // node always non-root
+            mean_q = node->get_mean_q(mean_q, discount);
             results.search_paths[i].push_back(node);
-            search_len += 1;
         }
-        // REFER:
-        // https://github.com/lezhang-thu/AlphaZero_Gomoku/blob/master/mcts_alphaZero.py#L137
+        // loop invariant:
+        // after `while`, `results.search_paths[i]`: a root-to-leaf path
         // `value_sum / visit_count` is v(s) for the node (i.e. state s)
-        results.search_paths[i].push_back(node);
-        results.search_lens.push_back(search_len);
     }
 }
 

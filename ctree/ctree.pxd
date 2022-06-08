@@ -49,7 +49,6 @@ cdef extern from "cnode.h" namespace "tree":
         CSearchResults() except +
         CSearchResults(int num) except +
         int num
-        vector[int] search_lens
 
     cdef void cback_propagate(vector[CNode*] &search_path, CMinMaxStats &min_max_stats, float value, float discount)
     void cbatch_back_propagate(float discount, vector[float] values, vector[vector[float]] policies,

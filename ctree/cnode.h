@@ -25,7 +25,7 @@ class CNode {
     void expand(const std::vector<float> &policy_logits);
     void add_exploration_noise(float exploration_fraction,
                                const std::vector<float> &noises);
-    float get_mean_q(int isRoot, float parent_q, float discount);
+    float get_mean_q(float parent_q, float discount);
     void print_out();
 
     int expanded();
@@ -60,7 +60,6 @@ class CRoots {
 class CSearchResults {
   public:
     int num;
-    std::vector<int> search_lens;
     std::vector<std::vector<CNode *>> search_paths;
 
     CSearchResults();

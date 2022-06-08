@@ -26,9 +26,6 @@ cdef class ResultsWrapper:
     def __cinit__(self, int num):
         self.cresults = CSearchResults(num)
 
-    def get_search_len(self):
-        return self.cresults.search_lens
-
 
 cdef class Roots:
     cdef int root_num
