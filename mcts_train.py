@@ -212,6 +212,8 @@ def train(opt):
 
     logger = setup_logging("log_{}".format(opt.id))
     logger.info("opt.batch_size: {}".format(opt.batch_size))
+    trainer.train()
+    predictor.eval()
     train_model = Trainer(optimizer,
                           predictor,
                           trainer,
@@ -219,15 +221,14 @@ def train(opt):
                           noptepochs=1,
                           envsperbatch=opt.batch_size,
                           opt=opt,
-                          loader=loader,
-                          clip_range=0.1)
+                          loader=loader)
     reload_period = 0
     try:
         while True:
             # Stop if reaching max epochs
             #if epoch >= opt.max_epochs and opt.max_epochs != -1:
             #    break
-            iteration, epoch, _ = train_model.train(iteration, epoch)
+            iteration, epoch = train_model.train(iteration, epoch)
             print("iteration: {}".format(iteration))
             reload_period += 4
             # critical - start

@@ -6,18 +6,13 @@ import captioning.ctree.cytree as tree
 
 
 class MBTrainer(torch.nn.Module):
-    def __init__(self, trainer, opt, clip_range):
+    def __init__(self, trainer, opt):
         super(MBTrainer, self).__init__()
         self.trainer = trainer
         self.opt = opt
 
     def forward(self, fc_feats, att_feats, att_masks, sample_probs, gen_result,
                 targ_vs):
-        ent_coef = 0.1
-        trajectory = [sample_logprobs, gen_result, advs]
-        for k, _ in enumerate(trajectory):
-            trajectory[k] = _.reshape(-1, _.shape[-1])
-        sample_probs, gen_result, values = trajectory
         fetch_values = list()
         _, log_probs = self.trainer(fc_feats,
                                     att_feats,
@@ -36,13 +31,12 @@ class MBTrainer(torch.nn.Module):
         mask = torch.cat(
             [mask.new_full((mask.shape[0], 1), True), mask[:, :-1]], 1)
 
-        x = mask.unsqueeze(-1)
-        loss = (sample_probs[x] * log_prob[x]).mean()
-        loss += F.huber_loss(values[mask], targ_vs.unsqueeze(-1))
+        loss = (sample_probs[mask] * log_prob[mask]).mean() + F.huber_loss(
+            values[mask], targ_vs[:, None, None])
         return loss
 
 
-class Runner(object):
+class Runner:
     def __init__(self, predictor, nenvs, noptepochs, envsperbatch, opt,
                  loader):
         self.predictor = predictor
@@ -51,15 +45,15 @@ class Runner(object):
         self.envsperbatch = envsperbatch
         self.opt = opt
         self.loader = loader
+
         self.root_dirichlet_alpha = 0.3
         self.root_exploration_fraction = 0.25
-
         self.pb_c_base = 19652
         self.pb_c_init = 1.25
         self.discount = 1.0
         self.value_delta_max = 0.01
         self.num_simulations = 50
-        self.num_epochs = int(1e4)
+        self.num_epochs = 10
 
         def f(epoch):
             if epoch < 0.5 * self.num_epochs:
@@ -80,6 +74,7 @@ class Runner(object):
         mb_gen_result = []
         mb_values = []
 
+        # collect data - start
         for _ in range(self.nenvs // self.opt.batch_size):
             data = self.loader.get_batch('train')
             iteration += 1
@@ -96,11 +91,11 @@ class Runner(object):
             x = [None if _ is None else _.cuda() for _ in x]
             fc_feats, att_feats, att_masks = x
 
-            # debug - start
+            # code - start
             p_fc_feats, p_att_feats, pp_att_feats, p_att_masks = self.predictor._prepare_feature(
                 fc_feats, att_feats, att_masks)
             # minimax value storage
-            min_max_stats_lst = tree.MinMaxStatsList(num)
+            min_max_stats_lst = tree.MinMaxStatsList(self.opt.batch_size)
             min_max_stats_lst.set_delta(self.value_delta_max)
 
             roots = tree.Roots(self.opt.batch_size, self.opt.vocab_size + 1)
@@ -111,9 +106,6 @@ class Runner(object):
                 for _ in range(self.opt.batch_size)
             ]
             prefixes = p_att_feats.new_zeros((batch_size, 0), dtype=torch.long)
-            seq_probs = []
-            unfinished = p_att_feats.new_zeros((batch_size, ),
-                                               dtype=torch.bool)
             policies, _ = self.predictor(p_fc_feats,
                                          p_att_feats,
                                          pp_att_feats,
@@ -122,7 +114,12 @@ class Runner(object):
                                          mode='prefix_next')
             roots.prepare(self.root_exploration_fraction, noises, policies)
 
-            for _ in range(self.opt.seq_len + 1):
+            seq_probs = []
+            unfinished = p_att_feats.new_ones((batch_size, ), dtype=torch.bool)
+
+            # env - start
+            for _ in range(self.opt.seq_length + 1):
+                # simulations - start
                 for _ in range(self.num_simulations):
                     # prepare a result wrapper to transport results between python and c++ parts
                     results = tree.ResultsWrapper(self.opt.batch_size)
@@ -154,6 +151,8 @@ class Runner(object):
                                               policies.tolist(),
                                               min_max_stats_lst, results)
                     seq_probs.append(policies.unsqueeze(1))
+                # simulations - end
+
                 it = torch.distributions.Categorical(probs=torch.from_numpy(
                     np.asarray(roots.get_distributions()))**(
                         1 / self.temperature(epoch))).sample()
@@ -165,16 +164,20 @@ class Runner(object):
                 prefixes = torch.cat([prefixes, it], -1)
                 if unfinished.sum() == 0:
                     break
+            # env - end
+
             roots.release_forest()
             rewards_sample = get_scores(data['gts'], prefixes, self.opt)
             seq_probs = torch.cat(seq_probs, 1).cpu().numpy()
             prefixes = prefixes.cpu().numpy()
-            # debug - end
+            # code - end
 
             trajectory = [seq_probs, prefixes, rewards_sample]
             for x, y in zip(trajectory,
                             [mb_sample_logprobs, mb_gen_result, mb_advs]):
                 y.append(x)
+        # collect data - end
+
         max_att_num = np.max([_.shape[1] for _ in mb_att_feats])
         for k, x in enumerate(mb_att_feats):
             after = max_att_num - x.shape[1]
@@ -188,35 +191,24 @@ class Runner(object):
             mb_fc_feats, mb_att_feats, mb_att_masks,
             mb_sample_probs, mb_gen_result, mb_values
         ]]
-        return iteration, epoch, mb_fc_feats, mb_att_feats, mb_att_masks, \
-               mb_sample_probs, mb_gen_result, mb_values
+        return (iteration, epoch, mb_fc_feats, mb_att_feats, mb_att_masks,
+                mb_sample_probs, mb_gen_result, mb_values)
 
 
 class Trainer(object):
-    def __init__(self,
-                 optimizer,
-                 predictor,
-                 trainer,
-                 nenvs,
-                 noptepochs,
-                 envsperbatch,
-                 opt,
-                 loader,
-                 clip_range=0.1):
+    def __init__(self, optimizer, predictor, trainer, nenvs, noptepochs,
+                 envsperbatch, opt, loader):
         self.optimizer = optimizer
 
         self.nenvs = nenvs
         self.noptepochs = noptepochs
         self.envsperbatch = envsperbatch
 
-        self.mbtrainer = MBTrainer(trainer, opt, clip_range)
+        self.mbtrainer = MBTrainer(trainer, opt)
         self.runner = Runner(predictor, nenvs, noptepochs, envsperbatch, opt,
                              loader)
 
     def train(self, iteration, epoch):
-        self.mbtrainer.trainer.eval()
-        self.runner.predictor.eval()
-
         iteration, epoch, \
         mb_fc_feats, mb_att_feats, mb_att_masks, \
         mb_sample_probs, mb_gen_result, mb_values = self.runner.run(iteration, epoch)
@@ -233,9 +225,9 @@ class Trainer(object):
                         mb_fc_feats, mb_att_feats, mb_att_masks,
                         mb_sample_probs, mb_gen_result, mb_values
                     ]]]
+                self.optimizer.zero_grad()
                 loss = self.mbtrainer(fc_feats, att_feats, att_masks,
                                       sample_probs, gen_result, targ_vs)
-                self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
-        return iteration, epoch, None
+        return iteration, epoch
