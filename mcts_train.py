@@ -150,7 +150,10 @@ def train(opt):
     if opt.start_from is not None and os.path.isfile(
             os.path.join(opt.start_from, 'model_' + opt.id + '.pth')):
         m_path = os.path.join(opt.start_from, 'model_' + opt.id + '.pth')
-        model.load_state_dict(torch.load(m_path))
+        missing_keys, unexpected_keys = model.load_state_dict(
+            torch.load(m_path), strict=False)
+        print("missing_keys: {}, unexpected_keys: {}".format(
+            missing_keys, unexpected_keys))
         print('#' * 6, "Model reload from {} success ...".format(m_path),
               '#' * 6)
 
