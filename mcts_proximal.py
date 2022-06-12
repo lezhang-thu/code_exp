@@ -91,7 +91,6 @@ class Runner:
             x = [None if _ is None else _.cuda() for _ in x]
             fc_feats, att_feats, att_masks = x
 
-            # code - start
             p_fc_feats, p_att_feats, pp_att_feats, p_att_masks = self.predictor._prepare_feature(
                 fc_feats, att_feats, att_masks)
             # minimax value storage
@@ -134,9 +133,10 @@ class Runner:
                     x = np.zeros(mask.shape, dtype=int)
                     x[mask] = np.concatenate(v)
 
-                    eos_env = np.full((self.opt.batch_size, ), False)
-                    eos_env[x[np.arange(self.opt.batch_size),
-                              lens - 1] == 0] = True
+                    eos_env = np.zeros((self.opt.batch_size, ), dtype=bool)
+                    eos_env[lens == 0] = True
+                    eos_env[lens > 0] = x[lens > 0, lens - 1] == 0
+                    eos_env = torch.from_numpy(eos_env).cuda()
 
                     t = torch.cat([prefixes, torch.from_numpy(x).cuda()], -1)
                     policies, values = self.predictor(p_fc_feats,
@@ -154,8 +154,14 @@ class Runner:
                                               policies.tolist(),
                                               min_max_stats_lst, results)
                 # simulations - end
-                x = np.asarray(
-                    roots.get_distributions())**(1 / self.temperature(epoch))
+                x = roots.get_distributions()
+                z = [0 for _ in range(self.opt.vocab_size + 1)]
+                for idx, y in enumerate(x):
+                    # if root is terminal, [] is returned
+                    if len(y) == 0:
+                        x[idx] = z
+                x = np.asarray(x)**(1 / self.temperature(epoch))
+                x = x / x.sum(-1, keepdims=True)
                 seq_probs.append(x)
 
                 it = torch.distributions.Categorical(
@@ -171,16 +177,23 @@ class Runner:
                 if unfinished.sum() == 0:
                     break
             # env - end
-
             roots.release_forest()
+
             seq_probs = np.stack(seq_probs, 1)
+            x = np.zeros((self.opt.batch_size, self.opt.seq_length,
+                          self.opt.vocab_size + 1),
+                         dtype=np.float32)
+            x[:, :seq_probs.shape[1], :] = seq_probs
+            seq_probs = x
+
             prefixes = prefixes.cpu().numpy()
-            rewards_sample = get_scores(data['gts'], prefixes, self.opt)
             x = np.zeros((self.opt.batch_size, self.opt.seq_length),
                          dtype=np.long)
-            x[:, :prefixes.shape[-1]] = prefixes
+            x[:, :prefixes.shape[1]] = prefixes
             prefixes = x
-            # code - end
+
+            rewards_sample = get_scores(data['gts'], prefixes,
+                                        self.opt).reshape(-1)
 
             trajectory = [seq_probs, prefixes, rewards_sample]
             for x, y in zip(trajectory,
