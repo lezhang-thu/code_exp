@@ -439,7 +439,7 @@ class AttModel(CaptionModel):
                                 dtype=torch.long)
         seqLogprobs = fc_feats.new_zeros(batch_size * sample_n,
                                          self.seq_length, self.vocab_size + 1)
-        for t in range(self.seq_length + 1):
+        for t in range(self.seq_length):
             if t == 0:  # input <bos>
                 it = fc_feats.new_full([batch_size * sample_n],
                                        self.bos_idx,

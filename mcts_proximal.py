@@ -112,69 +112,79 @@ class Runner:
                                          p_att_masks,
                                          prefixes,
                                          mode='prefix_next')
-            roots.prepare(self.root_exploration_fraction, noises, policies)
+            roots.prepare(self.root_exploration_fraction, noises,
+                          policies.tolist())
 
             seq_probs = []
             unfinished = p_att_feats.new_ones((batch_size, ), dtype=torch.bool)
 
             # env - start
-            for _ in range(self.opt.seq_length + 1):
+            for _ in range(self.opt.seq_length):
                 # simulations - start
                 for _ in range(self.num_simulations):
-                    # prepare a result wrapper to transport results between python and c++ parts
+                    # prepare a result wrapper to transport results between Python and C++ parts
                     results = tree.ResultsWrapper(self.opt.batch_size)
                     tree.batch_traverse(roots, self.pb_c_base, self.pb_c_init,
-                                        self.discount, results)
-                    # type of `x`: `list` of `list` (Python)
-                    x = results.get_trajectories()
-                    lens = np.asarray([len(item) for item in x])
-                    mask = lens[:, None] > np.asarray(lens.max())
-                    out = np.zeros(mask.shape, dtype=np.int64)
-                    out[mask] = np.concatenate(x)
-                    x = out
-                    eos_env = np.full((self.opt.batch_size, ), False)
-                    eos_env[out[np.arange(self.opt.batch_size),
-                                lens - 1] == 0] = True
+                                        self.discount, min_max_stats_lst,
+                                        results)
+                    # type of `v`: `list` of `list` (Python)
+                    v = results.get_trajectories()
+                    lens = np.asarray([len(item) for item in v])
+                    mask = lens[:, None] > np.arange(lens.max())
+                    x = np.zeros(mask.shape, dtype=int)
+                    x[mask] = np.concatenate(v)
 
-                    policies, values = self.predictor(
-                        p_fc_feats,
-                        p_att_feats,
-                        pp_att_feats,
-                        p_att_masks,
-                        torch.cat(
-                            [prefixes, torch.from_numpy(x).cuda()], -1),
-                        mode='prefix_next')
+                    eos_env = np.full((self.opt.batch_size, ), False)
+                    eos_env[x[np.arange(self.opt.batch_size),
+                              lens - 1] == 0] = True
+
+                    t = torch.cat([prefixes, torch.from_numpy(x).cuda()], -1)
+                    policies, values = self.predictor(p_fc_feats,
+                                                      p_att_feats,
+                                                      pp_att_feats,
+                                                      p_att_masks,
+                                                      t,
+                                                      mode='prefix_next')
                     policies[eos_env, 0] = -1.0
-                    values[eos_env] = get_scores(
-                        np.asarray(data['gts'])[eos_env], x[eos_env], self.opt)
+                    values[eos_env] = torch.as_tensor(get_scores(
+                        np.asarray(data['gts'])[eos_env].tolist(),
+                        t[eos_env].tolist(), self.opt),
+                                                      device=values.device)
                     tree.batch_back_propagate(self.discount, values.tolist(),
                                               policies.tolist(),
                                               min_max_stats_lst, results)
-                    seq_probs.append(policies.unsqueeze(1))
                 # simulations - end
+                x = np.asarray(
+                    roots.get_distributions())**(1 / self.temperature(epoch))
+                seq_probs.append(x)
 
-                it = torch.distributions.Categorical(probs=torch.from_numpy(
-                    np.asarray(roots.get_distributions()))**(
-                        1 / self.temperature(epoch))).sample()
+                it = torch.distributions.Categorical(
+                    probs=torch.from_numpy(x).cuda()).sample()
                 it[~unfinished] = 0
-                for idx, x in enumerate(unfinished):
-                    if x:
+
+                for idx, y in enumerate(unfinished):
+                    if y:
                         roots.update_with_move(idx, it[idx])
                 unfinished &= it != 0
-                prefixes = torch.cat([prefixes, it], -1)
+
+                prefixes = torch.cat([prefixes, it.unsqueeze_(-1)], -1)
                 if unfinished.sum() == 0:
                     break
             # env - end
 
             roots.release_forest()
-            rewards_sample = get_scores(data['gts'], prefixes, self.opt)
-            seq_probs = torch.cat(seq_probs, 1).cpu().numpy()
+            seq_probs = np.stack(seq_probs, 1)
             prefixes = prefixes.cpu().numpy()
+            rewards_sample = get_scores(data['gts'], prefixes, self.opt)
+            x = np.zeros((self.opt.batch_size, self.opt.seq_length),
+                         dtype=np.long)
+            x[:, :prefixes.shape[-1]] = prefixes
+            prefixes = x
             # code - end
 
             trajectory = [seq_probs, prefixes, rewards_sample]
             for x, y in zip(trajectory,
-                            [mb_sample_logprobs, mb_gen_result, mb_advs]):
+                            [mb_sample_probs, mb_gen_result, mb_values]):
                 y.append(x)
         # collect data - end
 
@@ -187,7 +197,7 @@ class Runner:
                                      mode="constant")
 
         mb_fc_feats, mb_att_feats, mb_att_masks, \
-        mb_sample_logprobs, mb_gen_result, mb_values = [None if len(_) == 0 else np.vstack(_) for _ in [
+        mb_sample_logprobs, mb_gen_result, mb_values = [None if len(_) == 0 else np.concatenate(_) for _ in [
             mb_fc_feats, mb_att_feats, mb_att_masks,
             mb_sample_probs, mb_gen_result, mb_values
         ]]
