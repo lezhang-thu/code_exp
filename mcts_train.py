@@ -20,7 +20,7 @@ import captioning.utils.eval_utils as eval_utils
 import captioning.utils.misc as utils
 from captioning.utils.rewards import init_scorer
 from captioning.modules.loss_wrapper import LossWrapper
-from captioning.modules.proximal import Trainer
+from captioning.modules.mcts_proximal import Trainer
 import logging
 import sys
 
@@ -203,6 +203,7 @@ def train(opt):
                                beam_size=1)
     print("best_val_score/beam_size=1: {}".format(best_val_score))
     #exit(0)
+    #best_val_score = 0.0
 
     init_scorer(opt.cached_tokens)
 

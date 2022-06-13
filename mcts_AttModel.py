@@ -339,24 +339,26 @@ class AttModel(CaptionModel):
             p_att_feats.new_full([batch_size], self.bos_idx, dtype=torch.long),
             p_fc_feats, p_att_feats, pp_att_feats, p_att_masks,
             self.init_hidden(batch_size), 0, fetch_values)
-        seq_values[:, 0] = fetch_values[0]
+        seq_values[:, 0] = fetch_values[0].squeeze_(1)
         seq_probs[:, 0, :] = F.softmax(logits, -1)
+
         # invariant:
         # `logits`, `state` are for token `t`
         for t in range(max_len):
-            fetch_value = list()
+            # a SERIOUS bug - missing `s` in `fetch_values`
+            fetch_values = list()
             logits, state = self.get_logprobs_state(prefixes[:, t], p_fc_feats,
                                                     p_att_feats, pp_att_feats,
                                                     p_att_masks, state, 0,
                                                     fetch_values)
-
-            seq_values[:, t + 1] = fetch_values[0]
+            seq_values[:, t + 1] = fetch_values[0].squeeze_(1)
             seq_probs[:, t + 1, :] = F.softmax(logits, -1)
         x = (prefixes > 0).sum(-1, keepdim=True)
-        return seq_probs.gather(1, x.expand(
-            -1, -1,
-            self.vocab_size + 1)).squeeze_(1), seq_values.gather(1,
-                                                                 x).squeeze_(1)
+        y = seq_probs.gather(
+            1,
+            x.unsqueeze(-1).expand(-1, -1, self.vocab_size + 1)).squeeze_(1)
+        z = seq_values.gather(1, x).squeeze_(1)
+        return y, z
 
     def _extend_trajectory(self, p_fc_feats, p_att_feats, pp_att_feats,
                            p_att_masks, gen_result, max_gen_len):
@@ -453,7 +455,7 @@ class AttModel(CaptionModel):
                 p_att_masks,
                 state,
                 output_logsoftmax=output_logsoftmax,
-                fetch_vlaues=fetch_values)
+                fetch_values=fetch_values)
 
             # sample the next word
             if t == self.seq_length:  # skip if we achieve maximum length

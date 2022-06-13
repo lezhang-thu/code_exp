@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 from captioning.utils.rewards import get_scores
 import captioning.ctree.cytree as tree
@@ -26,13 +27,15 @@ class MBTrainer(torch.nn.Module):
                                     },
                                     fetch_values=fetch_values,
                                     mode='sample')
-        values = torch.stack(fetch_values, 1)
+        values = torch.cat(fetch_values, 1)
         mask = gen_result > 0
         mask = torch.cat(
             [mask.new_full((mask.shape[0], 1), True), mask[:, :-1]], 1)
+        targ_vs = targ_vs.unsqueeze(1).expand_as(values)
 
-        loss = (sample_probs[mask] * log_prob[mask]).mean() + F.huber_loss(
-            values[mask], targ_vs[:, None, None])
+        x = (0.5 * (values - targ_vs)**2 * mask[:, :values.shape[1]]).mean()
+        y = (mask.unsqueeze(-1) * sample_probs * log_probs).mean()
+        loss = x
         return loss
 
 
@@ -52,7 +55,7 @@ class Runner:
         self.pb_c_init = 1.25
         self.discount = 1.0
         self.value_delta_max = 0.01
-        self.num_simulations = 50
+        self.num_simulations = 10
         self.num_epochs = 10
 
         def f(epoch):
@@ -93,6 +96,7 @@ class Runner:
 
             p_fc_feats, p_att_feats, pp_att_feats, p_att_masks = self.predictor._prepare_feature(
                 fc_feats, att_feats, att_masks)
+
             # minimax value storage
             min_max_stats_lst = tree.MinMaxStatsList(self.opt.batch_size)
             min_max_stats_lst.set_delta(self.value_delta_max)
@@ -104,30 +108,31 @@ class Runner:
                                         np.float32).tolist()
                 for _ in range(self.opt.batch_size)
             ]
-            prefixes = p_att_feats.new_zeros((batch_size, 0), dtype=torch.long)
-            policies, _ = self.predictor(p_fc_feats,
-                                         p_att_feats,
-                                         pp_att_feats,
-                                         p_att_masks,
-                                         prefixes,
-                                         mode='prefix_next')
+            prefixes = p_att_feats.new_zeros((self.opt.batch_size, 0),
+                                             dtype=torch.long)
+
+            policies, _ = self.predictor._prefix_next(p_fc_feats, p_att_feats,
+                                                      pp_att_feats,
+                                                      p_att_masks, prefixes)
             roots.prepare(self.root_exploration_fraction, noises,
                           policies.tolist())
 
             seq_probs = []
-            unfinished = p_att_feats.new_ones((batch_size, ), dtype=torch.bool)
+            unfinished = p_att_feats.new_ones((self.opt.batch_size, ),
+                                              dtype=torch.bool)
 
             # env - start
-            for _ in range(self.opt.seq_length):
+            for idx_outer in range(self.opt.max_length):
                 # simulations - start
-                for _ in range(self.num_simulations):
+                for idx_inner in range(self.num_simulations):
                     # prepare a result wrapper to transport results between Python and C++ parts
                     results = tree.ResultsWrapper(self.opt.batch_size)
                     tree.batch_traverse(roots, self.pb_c_base, self.pb_c_init,
                                         self.discount, min_max_stats_lst,
                                         results)
+
                     # type of `v`: `list` of `list` (Python)
-                    v = results.get_trajectories()
+                    v = roots.get_trajectories()
                     lens = np.asarray([len(item) for item in v])
                     mask = lens[:, None] > np.arange(lens.max())
                     x = np.zeros(mask.shape, dtype=int)
@@ -135,27 +140,24 @@ class Runner:
 
                     eos_env = np.zeros((self.opt.batch_size, ), dtype=bool)
                     eos_env[lens == 0] = True
-                    eos_env[lens > 0] = x[lens > 0, lens - 1] == 0
+                    eos_env[lens > 0] = x[lens > 0, lens[lens > 0] - 1] == 0
                     eos_env = torch.from_numpy(eos_env).cuda()
 
                     t = torch.cat([prefixes, torch.from_numpy(x).cuda()], -1)
-                    policies, values = self.predictor(p_fc_feats,
-                                                      p_att_feats,
-                                                      pp_att_feats,
-                                                      p_att_masks,
-                                                      t,
-                                                      mode='prefix_next')
+                    policies, values = self.predictor._prefix_next(
+                        p_fc_feats, p_att_feats, pp_att_feats, p_att_masks, t)
                     policies[eos_env, 0] = -1.0
-                    values[eos_env] = torch.as_tensor(get_scores(
-                        np.asarray(data['gts'])[eos_env].tolist(),
-                        t[eos_env].tolist(), self.opt),
-                                                      device=values.device)
+                    if eos_env.sum() > 0:
+                        x = get_scores(
+                            np.asarray(data['gts'])[eos_env.cpu().numpy()],
+                            t[eos_env], self.opt)
+                        values[eos_env] = torch.from_numpy(x).float().cuda()
                     tree.batch_back_propagate(self.discount, values.tolist(),
                                               policies.tolist(),
                                               min_max_stats_lst, results)
                 # simulations - end
                 x = roots.get_distributions()
-                z = [0 for _ in range(self.opt.vocab_size + 1)]
+                z = [1 for _ in range(self.opt.vocab_size + 1)]
                 for idx, y in enumerate(x):
                     # if root is terminal, [] is returned
                     if len(y) == 0:
@@ -180,20 +182,22 @@ class Runner:
             roots.release_forest()
 
             seq_probs = np.stack(seq_probs, 1)
-            x = np.zeros((self.opt.batch_size, self.opt.seq_length,
+            x = np.zeros((self.opt.batch_size, self.opt.max_length,
                           self.opt.vocab_size + 1),
                          dtype=np.float32)
             x[:, :seq_probs.shape[1], :] = seq_probs
             seq_probs = x
 
-            prefixes = prefixes.cpu().numpy()
-            x = np.zeros((self.opt.batch_size, self.opt.seq_length),
-                         dtype=np.long)
+            x = torch.zeros((self.opt.batch_size, self.opt.max_length),
+                            dtype=np.long,
+                            device=prefixes.device)
             x[:, :prefixes.shape[1]] = prefixes
             prefixes = x
 
-            rewards_sample = get_scores(data['gts'], prefixes,
-                                        self.opt).reshape(-1)
+            rewards_sample = np.asarray(get_scores(data['gts'], prefixes,
+                                                   self.opt),
+                                        dtype=np.float32)
+            prefixes = prefixes.cpu().numpy()
 
             trajectory = [seq_probs, prefixes, rewards_sample]
             for x, y in zip(trajectory,
@@ -210,10 +214,11 @@ class Runner:
                                      mode="constant")
 
         mb_fc_feats, mb_att_feats, mb_att_masks, \
-        mb_sample_logprobs, mb_gen_result, mb_values = [None if len(_) == 0 else np.concatenate(_) for _ in [
+        mb_sample_probs, mb_gen_result, mb_values = [None if len(_) == 0 else np.concatenate(_) for _ in [
             mb_fc_feats, mb_att_feats, mb_att_masks,
             mb_sample_probs, mb_gen_result, mb_values
         ]]
+
         return (iteration, epoch, mb_fc_feats, mb_att_feats, mb_att_masks,
                 mb_sample_probs, mb_gen_result, mb_values)
 

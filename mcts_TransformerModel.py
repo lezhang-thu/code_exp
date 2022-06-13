@@ -21,7 +21,7 @@ import math
 import numpy as np
 
 from .CaptionModel import CaptionModel
-from .AttModel import sort_pack_padded_sequence, pad_unsort_packed_sequence, pack_wrapper, AttModel
+from captioning.models.mcts_AttModel import sort_pack_padded_sequence, pad_unsort_packed_sequence, pack_wrapper, AttModel
 
 
 class EncoderDecoder(nn.Module):
@@ -36,11 +36,9 @@ class EncoderDecoder(nn.Module):
         self.src_embed = src_embed
         self.tgt_embed = tgt_embed
         self.generator = generator
-        self.value = nn.Sequential([
-            nn.Linear(d_model, 256),
-            nn.ReLU(inplace=True),
-            nn.Linear(256, 1)
-        ])
+        d_model = 512
+        self.value = nn.Sequential(nn.Linear(d_model, 256),
+                                   nn.ReLU(inplace=True), nn.Linear(256, 1))
 
     def forward(self, src, tgt, src_mask, tgt_mask):
         "Take in and process masked src and target sequences."
