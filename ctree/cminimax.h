@@ -10,28 +10,28 @@ const float FLOAT_MIN = -FLOAT_MAX;
 namespace tools {
 
 class CMinMaxStats {
-  public:
-    float maximum, minimum, value_delta_max;
+public:
+  float maximum, minimum, value_delta_max;
 
-    CMinMaxStats();
-    ~CMinMaxStats();
+  CMinMaxStats();
+  ~CMinMaxStats();
 
-    void set_delta(float value_delta_max);
-    void update(float value);
-    void clear();
-    float normalize(float value);
+  void set_delta(float value_delta_max);
+  void update(float value);
+  void clear();
+  float normalize(float value);
 };
 
 class CMinMaxStatsList {
-  public:
-    int num;
-    std::vector<CMinMaxStats> stats_lst;
+public:
+  int num;
+  std::vector<CMinMaxStats> stats_lst;
 
-    CMinMaxStatsList();
-    CMinMaxStatsList(int num);
-    ~CMinMaxStatsList();
+  CMinMaxStatsList();
+  CMinMaxStatsList(int num);
+  ~CMinMaxStatsList();
 
-    void set_delta(float value_delta_max);
+  void set_delta(float value_delta_max);
 };
 } // namespace tools
 

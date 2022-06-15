@@ -33,9 +33,10 @@ cdef extern from "cnode.h" namespace "tree":
         pass
 
     cdef cppclass CRoots:
-        CRoots(int root_num, int action_num) except +
+        CRoots(int root_num, int action_num, int max_depth) except +
         int root_num, action_num
         vector[CNode*] roots
+        vector[int] max_depths
 
         void prepare(float root_exploration_fraction, const vector[vector[float]] &noises, const vector[vector[float]] &policies)
         void prepare_no_noise(const vector[vector[float]] &policies)

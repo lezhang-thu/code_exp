@@ -117,15 +117,17 @@ void CNode::release_tree() {
 
 //*********************************************************
 
-CRoots::CRoots(int root_num, int action_num) {
+CRoots::CRoots(int root_num, int action_num, int max_depth) {
   this->root_num = root_num;
   this->action_num = action_num;
   this->roots.reserve(root_num);
+  this->max_depths.reserve(root_num);
 
   for (int i = 0; i < root_num; ++i) {
     // REFER:
     // https://github.com/lezhang-thu/AlphaZero_Gomoku/blob/master/mcts_alphaZero.py#L101
     this->roots.push_back(new CNode(1.0, action_num));
+    this->max_depths.push_back(max_depth);
   }
 }
 
@@ -186,6 +188,7 @@ void CRoots::update_with_move(int root_idx, int act_idx) {
   this->roots[root_idx] = root->get_child(act_idx);
   root->children[act_idx] = nullptr;
   root->release_tree();
+  this->max_depths[root_idx] -= 1;
 }
 
 void CRoots::release_forest() {
@@ -318,7 +321,8 @@ void cbatch_traverse(CRoots *roots, int pb_c_base, float pb_c_init,
 
     // invariant: `mean_q` is \hat{Q}(s) for `node`
     float mean_q = 0.0;
-    while (node->expanded()) {
+    int max_depth = roots->max_depths[i];
+    while (max_depth > 0 && node->expanded()) {
       int action = cselect_child(node, min_max_stats_lst->stats_lst[i],
                                  pb_c_base, pb_c_init, discount, mean_q);
       node->best_action = action;
@@ -329,6 +333,7 @@ void cbatch_traverse(CRoots *roots, int pb_c_base, float pb_c_init,
       if (node->expanded())
         mean_q = node->get_mean_q(mean_q, discount);
       results.search_paths[i].push_back(node);
+      --max_depth;
     }
     // loop invariant:
     // after `while`, `results.search_paths[i]`: a root-to-leaf path

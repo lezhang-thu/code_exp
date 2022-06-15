@@ -210,7 +210,8 @@ class AttModel(CaptionModel):
             logprobs = self.logit(output)
 
         if fetch_values is not None:
-            fetch_values.append(self.value(output))
+            # TODO
+            fetch_values.append(self.value(output.detach()))
         return logprobs, state
 
     def _old_sample_beam(self, fc_feats, att_feats, att_masks=None, opt={}):
@@ -324,6 +325,43 @@ class AttModel(CaptionModel):
                 seqLogprobs[k, :seq_len] = self.done_beams[k][0]['logps']
         # return the samples and their log likelihoods
         return seq, seqLogprobs
+
+    def _prefix_rollout(self, p_fc_feats, p_att_feats, pp_att_feats,
+                        p_att_masks, prefixes):
+        batch_size = p_att_feats.shape[0]
+        # REQUIRE: `max_len` < (strictly) `self.seq_length`
+        max_len = prefixes.shape[-1]
+        assert max_len < self.seq_length
+        seq = p_att_feats.new_full((batch_size, self.seq_length),
+                                   self.pad_idx,
+                                   dtype=torch.long)
+        seq_probs = p_att_feats.new_zeros(batch_size, max_len + 1,
+                                          self.vocab_size + 1)
+        # input <bos>
+        it = p_att_feats.new_full([batch_size], self.bos_idx, dtype=torch.long)
+        state = self.init_hidden(batch_size)
+        unfinished = p_att_feats.new_ones((batch_size, ), dtype=torch.bool)
+        for t in range(self.seq_length):
+            logits, state = self.get_logprobs_state(it, p_fc_feats,
+                                                    p_att_feats, pp_att_feats,
+                                                    p_att_masks, state, 0)
+            if t <= max_len:
+                seq_probs[:, t, :] = F.softmax(logits, -1)
+            it = torch.distributions.Categorical(logits=logits).sample()
+            if t < max_len:
+                x = prefixes[:, t] != 0
+                it = prefixes[:, t] * x + (1 - x) * it
+            it[~unfinished] = 0
+            unfinished &= it != 0
+            seq[:, t] = it
+            if unfinished.sum() == 0:
+                break
+
+        x = (prefixes > 0).sum(-1, keepdim=True)
+        y = seq_probs.gather(
+            1,
+            x.unsqueeze(-1).expand(-1, -1, self.vocab_size + 1)).squeeze_(1)
+        return y, seq
 
     def _prefix_next(self, p_fc_feats, p_att_feats, pp_att_feats, p_att_masks,
                      prefixes):

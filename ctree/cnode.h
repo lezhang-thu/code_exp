@@ -14,57 +14,58 @@
 namespace tree {
 
 class CNode {
-  public:
-    int visit_count, action_num, best_action;
-    float prior, value_sum;
-    std::vector<CNode *> children;
+public:
+  int visit_count, action_num, best_action;
+  float prior, value_sum;
+  std::vector<CNode *> children;
 
-    CNode(float prior, int action_num);
-    ~CNode();
+  CNode(float prior, int action_num);
+  ~CNode();
 
-    void expand(const std::vector<float> &policy_logits);
-    void add_exploration_noise(float exploration_fraction,
-                               const std::vector<float> &noises);
-    float get_mean_q(float parent_q, float discount);
-    void print_out();
+  void expand(const std::vector<float> &policy_logits);
+  void add_exploration_noise(float exploration_fraction,
+                             const std::vector<float> &noises);
+  float get_mean_q(float parent_q, float discount);
+  void print_out();
 
-    int expanded();
+  int expanded();
 
-    float value();
+  float value();
 
-    std::vector<int> get_trajectory();
-    std::vector<int> get_children_distribution();
-    CNode *get_child(int action);
-    void release_tree();
+  std::vector<int> get_trajectory();
+  std::vector<int> get_children_distribution();
+  CNode *get_child(int action);
+  void release_tree();
 };
 
 class CRoots {
-  public:
-    int root_num, action_num;
-    std::vector<CNode *> roots;
+public:
+  int root_num, action_num;
+  std::vector<CNode *> roots;
+  std::vector<int> max_depths;
 
-    CRoots(int root_num, int action_num);
-    ~CRoots();
+  CRoots(int root_num, int action_num, int max_depth);
+  ~CRoots();
 
-    void prepare(float root_exploration_fraction,
-                 const std::vector<std::vector<float>> &noises,
-                 const std::vector<std::vector<float>> &policies);
-    void prepare_no_noise(const std::vector<std::vector<float>> &policies);
-    std::vector<std::vector<int>> get_trajectories();
-    std::vector<std::vector<int>> get_distributions();
-    std::vector<float> get_values();
-    void update_with_move(int root_idx, int act_idx);
-    void release_forest();
+  void prepare(float root_exploration_fraction,
+               const std::vector<std::vector<float>> &noises,
+               const std::vector<std::vector<float>> &policies);
+  void prepare_no_noise(const std::vector<std::vector<float>> &policies);
+  std::vector<std::vector<int>> get_trajectories();
+  std::vector<std::vector<int>> get_distributions();
+  std::vector<float> get_values();
+  void update_with_move(int root_idx, int act_idx);
+  void release_forest();
 };
 
 class CSearchResults {
-  public:
-    int num;
-    std::vector<std::vector<CNode *>> search_paths;
+public:
+  int num;
+  std::vector<std::vector<CNode *>> search_paths;
 
-    CSearchResults();
-    CSearchResults(int num);
-    ~CSearchResults();
+  CSearchResults();
+  CSearchResults(int num);
+  ~CSearchResults();
 };
 
 //*********************************************************
