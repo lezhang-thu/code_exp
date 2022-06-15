@@ -151,7 +151,7 @@ class Runner:
 
                     t = torch.cat([prefixes, torch.from_numpy(x).cuda()], -1)
                     policies = p_att_feats.new_zeros(
-                        (self.opt.batch_size, self.vocab_size + 1))
+                        (self.opt.batch_size, self.opt.vocab_size + 1))
                     policies[eos_env, 0] = -1.0
                     values = policies.new_zeros((self.opt.batch_size, ))
 
@@ -160,11 +160,12 @@ class Runner:
                         x = p_fc_feats
                         if x is not None:
                             x = x[~eos_env]
+
                         x_policy, rollout = self.predictor._prefix_rollout(
                             x, p_att_feats[~eos_env], pp_att_feats[~eos_env],
                             p_att_masks[~eos_env],
-                            t[~eos_env][:, :idx_outer +
-                                        np.max(lens[~eos_env])])
+                            t[~eos_env][:, :idx_outer + np.max(lens[
+                                (~eos_env).cpu().numpy()])])
                         policies[~eos_env] = x_policy
 
                     for y, targ in zip((eos_env, ~eos_env),

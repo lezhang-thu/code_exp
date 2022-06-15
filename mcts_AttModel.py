@@ -341,6 +341,7 @@ class AttModel(CaptionModel):
         it = p_att_feats.new_full([batch_size], self.bos_idx, dtype=torch.long)
         state = self.init_hidden(batch_size)
         unfinished = p_att_feats.new_ones((batch_size, ), dtype=torch.bool)
+
         for t in range(self.seq_length):
             logits, state = self.get_logprobs_state(it, p_fc_feats,
                                                     p_att_feats, pp_att_feats,
@@ -348,9 +349,10 @@ class AttModel(CaptionModel):
             if t <= max_len:
                 seq_probs[:, t, :] = F.softmax(logits, -1)
             it = torch.distributions.Categorical(logits=logits).sample()
+
             if t < max_len:
                 x = prefixes[:, t] != 0
-                it = prefixes[:, t] * x + (1 - x) * it
+                it = prefixes[:, t] * x + (~x) * it
             it[~unfinished] = 0
             unfinished &= it != 0
             seq[:, t] = it
