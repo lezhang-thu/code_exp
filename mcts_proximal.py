@@ -60,7 +60,7 @@ class Runner:
         self.pb_c_init = 1.25
         self.discount = 1.0
         self.value_delta_max = 0.01
-        self.num_simulations = 5
+        self.num_simulations = 50
         self.num_epochs = 10
 
         def f(epoch):
@@ -195,7 +195,8 @@ class Runner:
 
                 for idx, y in enumerate(unfinished):
                     if y:
-                        roots.update_with_move(idx, it[idx])
+                        roots.update_with_move(idx, it[idx], min_max_stats_lst,
+                                               self.double)
                 unfinished &= it != 0
 
                 prefixes = torch.cat([prefixes, it.unsqueeze_(-1)], -1)
