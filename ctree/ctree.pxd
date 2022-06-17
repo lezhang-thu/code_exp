@@ -42,8 +42,7 @@ cdef extern from "cnode.h" namespace "tree":
         void prepare_no_noise(const vector[vector[float]] &policies)
         vector[vector[int]] get_trajectories()
         vector[vector[int]] get_distributions()
-        vector[float] get_values()
-        void update_with_move(int root_idx, int act_idx)
+        void update_with_move(int root_idx, int act_idx, CMinMaxStatsList *min_max_stats_lst, float discount)
         void release_forest()
 
     cdef cppclass CSearchResults:

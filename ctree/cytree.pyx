@@ -35,7 +35,9 @@ cdef class Roots:
         self.root_num = root_num
         self.roots = new CRoots(root_num, action_num, max_depth)
 
-    def prepare(self, float root_exploration_fraction, list noises, list policy_logits_pool):
+    def prepare(self, 
+        float root_exploration_fraction,
+        list noises, list policy_logits_pool):
         self.roots[0].prepare(root_exploration_fraction, noises, policy_logits_pool)
 
     def prepare_no_noise(self, list policy_logits_pool):
@@ -47,11 +49,15 @@ cdef class Roots:
     def get_distributions(self):
         return self.roots[0].get_distributions()
 
-    def get_values(self):
-        return self.roots[0].get_values()
-
-    def update_with_move(self, int root_idx, int act_idx):
-        self.roots[0].update_with_move(root_idx, act_idx)
+    def update_with_move(
+        self, 
+        int root_idx, int act_idx, 
+        MinMaxStatsList min_max_stats_lst, 
+        float discount):
+        self.roots[0].update_with_move(
+            root_idx, act_idx, 
+            min_max_stats_lst.cmin_max_stats_lst, 
+            discount)
 
     def release_forest(self):
         self.roots[0].release_forest()
@@ -64,7 +70,10 @@ cdef class Roots:
         return self.root_num
 
 
-def batch_back_propagate(float discount, list values, list policies, MinMaxStatsList min_max_stats_lst, ResultsWrapper results):
+def batch_back_propagate(
+    float discount, list values, 
+    list policies, MinMaxStatsList min_max_stats_lst, 
+    ResultsWrapper results):
     cdef vector[float] cvalues = values
     cdef vector[vector[float]] cpolicies = policies
 
@@ -72,6 +81,12 @@ def batch_back_propagate(float discount, list values, list policies, MinMaxStats
                           min_max_stats_lst.cmin_max_stats_lst, results.cresults)
 
 
-def batch_traverse(Roots roots, int pb_c_base, float pb_c_init, float discount, MinMaxStatsList min_max_stats_lst, ResultsWrapper results):
-    cbatch_traverse(roots.roots, pb_c_base, pb_c_init, discount, min_max_stats_lst.cmin_max_stats_lst, results.cresults)
+def batch_traverse(
+    Roots roots, int pb_c_base, float pb_c_init, 
+    float discount, MinMaxStatsList min_max_stats_lst, 
+    ResultsWrapper results):
+    cbatch_traverse(
+        roots.roots, pb_c_base, pb_c_init, 
+        discount, min_max_stats_lst.cmin_max_stats_lst, 
+        results.cresults)
 
