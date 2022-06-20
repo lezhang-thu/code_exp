@@ -196,7 +196,7 @@ class Runner:
                 for idx, y in enumerate(unfinished):
                     if y:
                         roots.update_with_move(idx, it[idx], min_max_stats_lst,
-                                               self.double)
+                                               self.discount)
                 unfinished &= it != 0
 
                 prefixes = torch.cat([prefixes, it.unsqueeze_(-1)], -1)
