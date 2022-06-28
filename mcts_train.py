@@ -157,17 +157,15 @@ def train(opt):
         print('#' * 6, "Model reload from {} success ...".format(m_path),
               '#' * 6)
 
-    predictor = model
-    predictor.vocab = getattr(model, 'vocab', None)  # nasty
-    c = copy.deepcopy
-    trainer = c(predictor)
+    trainer = model
+    trainer.vocab = getattr(model, 'vocab', None)  # nasty
 
     ##########################
     #  Build optimizer
     ##########################
     optimizer = torch.optim.AdamW(
         trainer.parameters(),
-        lr=1e-4,  # TODO
+        lr=5e-6,
         weight_decay=1e-4)
 
     # Load the optimizer
@@ -197,7 +195,7 @@ def train(opt):
     #    best_val_score = infos.get('best_val_score', None)
 
     best_val_score = eval_func(opt,
-                               predictor,
+                               trainer,
                                loader,
                                split='val',
                                beam_size=1)
@@ -208,38 +206,22 @@ def train(opt):
     init_scorer(opt.cached_tokens)
 
     # Start training
-    nenvs = 4 * opt.batch_size
-    assert nenvs % opt.batch_size == 0
-    x = nenvs // opt.batch_size
     opt.save_checkpoint_every = 16
-    assert opt.save_checkpoint_every % x == 0
 
     logger = setup_logging("log_{}".format(opt.id))
     logger.info("opt.batch_size: {}".format(opt.batch_size))
     trainer.train()
-    predictor.eval()
     train_model = Trainer(optimizer,
-                          predictor,
                           trainer,
-                          nenvs=nenvs,
-                          noptepochs=1,
-                          envsperbatch=opt.batch_size,
                           opt=opt,
                           loader=loader)
-    reload_period = 0
     try:
         while True:
             # Stop if reaching max epochs
             #if epoch >= opt.max_epochs and opt.max_epochs != -1:
             #    break
-            iteration, epoch = train_model.train(iteration, epoch)
             print("iteration: {}".format(iteration))
-            reload_period += 4
-            # critical - start
-            if reload_period == 16:
-                predictor.load_state_dict(trainer.state_dict())
-                reload_period = 0
-            # critical - end
+            iteration, epoch = train_model.train(iteration, epoch)
 
             # update infos
             infos['iter'] = iteration
@@ -249,27 +231,27 @@ def train(opt):
             # make evaluation on validation set, and save model
             if iteration % opt.save_checkpoint_every == 0:
                 current_score = eval_func(opt,
-                                          predictor,
+                                          trainer,
                                           loader,
                                           split='val',
                                           beam_size=1)
-                test_score = eval_func(opt,
-                                       predictor,
-                                       loader,
-                                       split='test',
-                                       beam_size=5)
-                logger.info('######## Iter (TEST) ' + str(iteration) +
-                            ' ########')
-                logger.info("test_score: {}".format(test_score))
+                #test_score = eval_func(opt,
+                #                       trainer,
+                #                       loader,
+                #                       split='test',
+                #                       beam_size=5)
+                #logger.info('######## Iter (TEST) ' + str(iteration) +
+                #            ' ########')
+                #logger.info("test_score: {}".format(test_score))
                 logger.info("val_current @iteration {}: {}".format(
                     iteration, current_score))
-                logger.info("val_predictor: {}".format(best_val_score))
+                logger.info("val_trainer: {}".format(best_val_score))
 
                 if best_val_score is None or current_score > best_val_score:
                     best_val_score = current_score
                     infos['best_val_score'] = best_val_score
                     utils.save_checkpoint(opt,
-                                          predictor,
+                                          trainer,
                                           infos,
                                           optimizer,
                                           append='best')
