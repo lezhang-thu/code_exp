@@ -196,7 +196,7 @@ def train(opt):
     init_scorer(opt.cached_tokens)
     train_model = Trainer(optimizer, trainer, opt=opt, loader=loader)
     #best_val_score = eval_func(opt, trainer, loader, split='val', beam_size=1)
-    eval_data = self.loader.get_batch('val')
+    eval_data = loader.get_batch('val')
     best_val_score = train_model.runner.evaluate_greedy(eval_data)
     print("best_val_score/beam_size=1: {}".format(best_val_score))
 
@@ -219,7 +219,8 @@ def train(opt):
             infos['loader_state_dict'] = loader.state_dict()
 
             # make evaluation on validation set, and save model
-            if iteration % opt.save_checkpoint_every == 0:
+            #if iteration % opt.save_checkpoint_every == 0:
+            if iteration % 5 == 0:
                 current_score = train_model.runner.evaluate_mcts(eval_data)
                 #current_score = eval_func(opt,
                 #                          trainer,

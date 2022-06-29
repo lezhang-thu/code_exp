@@ -25,7 +25,7 @@ class MBTrainer(torch.nn.Module):
         mask = gen_result > 0
         mask = torch.cat(
             [mask.new_full((mask.shape[0], 1), True), mask[:, :-1]], 1)
-        x = (F.huber_loss(values, targ_vs, reduction='none') *
+        x = (F.huber_loss(values.squeeze_(-1), targ_vs, reduction='none') *
              mask).sum() / mask.sum()
         #y = (mask * (sample_probs * log_probs).sum(-1)).mean()
         #return -y
@@ -63,8 +63,10 @@ class Runner:
     @torch.no_grad()
     def evaluate_greedy(self, data):
         self.trainer.eval()
-        gts, p_fc_feats, p_att_feats, pp_att_feats, p_att_masks = self.prepare_input(
-            data)
+        x = [data['fc_feats'], data['att_feats'], data['att_masks']]
+        x = [None if _ is None else _.cuda() for _ in x]
+        fc_feats, att_feats, att_masks = x
+        gts = np.asarray(data['gts'], dtype=object)
         greedy_x, _ = self.trainer(fc_feats,
                                    att_feats,
                                    att_masks,
@@ -76,14 +78,15 @@ class Runner:
     @torch.no_grad()
     def evaluate_mcts(self, data):
         self.trainer.eval()
-        mcts_x = self.mcts(data, rollout=False)[-1]
+        mcts_x = self.mcts(data, 0, rollout=False)[-1]
         gts = np.asarray(data['gts'], dtype=object)
-        rewards_sample = np.asarray(get_scores(gts, mcts_x, self.opt),
+        rewards_sample = np.asarray(get_scores(gts, torch.from_numpy(mcts_x),
+                                               self.opt),
                                     dtype=np.float32)
         return rewards_sample.mean()
 
     def policies_values(self, eos_env, p_fc_feats, p_att_feats, pp_att_feats,
-                        gts, idx_outer):
+                        p_att_masks, gts, idx_outer, t, lens):
         policies = p_att_feats.new_zeros(
             (self.opt.batch_size, self.opt.vocab_size + 1))
         policies[eos_env, 0] = -1.0
@@ -109,7 +112,8 @@ class Runner:
         return policies, values
 
     def simulate(self, roots, min_max_stats_lst, prefixes, p_fc_feats,
-                 p_att_feats, pp_att_feats, gts, idx_outer, rollout):
+                 p_att_feats, pp_att_feats, p_att_masks, gts, idx_outer,
+                 rollout):
         for idx_inner in range(self.num_simulations):
             # prepare a result wrapper to transport results between Python and C++ parts
             results = tree.ResultsWrapper(self.opt.batch_size)
@@ -132,8 +136,8 @@ class Runner:
             t = torch.cat([prefixes, torch.from_numpy(x).cuda()], -1)
             if rollout:
                 policies, values = self.policies_values(
-                    eos_env, p_fc_feats, p_att_feats, pp_att_feats, gts,
-                    idx_outer)
+                    eos_env, p_fc_feats, p_att_feats, pp_att_feats,
+                    p_att_masks, gts, idx_outer, t, lens)
             else:
                 policies, values = self.trainer._prefix_next(
                     p_fc_feats, p_att_feats, pp_att_feats, p_att_masks, t)
@@ -174,8 +178,8 @@ class Runner:
             fc_feats, att_feats, att_masks)
         return gts, p_fc_feats, p_att_feats, pp_att_feats, p_att_masks
 
-    @torhc.no_grad()
-    def mcts(self, data, rollout=True):
+    @torch.no_grad()
+    def mcts(self, data, epoch, rollout=True):
         gts, p_fc_feats, p_att_feats, pp_att_feats, p_att_masks = self.prepare_input(
             data)
         roots, min_max_stats_lst, prefixes = self.init_tree(
@@ -187,7 +191,8 @@ class Runner:
         # env - start
         for idx_outer in range(self.opt.max_length):
             self.simulate(roots, min_max_stats_lst, prefixes, p_fc_feats,
-                          p_att_feats, pp_att_feats, gts, idx_outer, rollout)
+                          p_att_feats, pp_att_feats, p_att_masks, gts,
+                          idx_outer, rollout)
             x = roots.get_distributions()
             z = [1 for _ in range(self.opt.vocab_size + 1)]
             for idx, y in enumerate(x):
@@ -216,7 +221,7 @@ class Runner:
                 break
         # env - end
         roots.release_forest()
-        return ret_numpy(seq_probs, seq_values, prefixes)
+        return self.ret_numpy(seq_probs, seq_values, prefixes)
 
     def ret_numpy(self, seq_probs, seq_values, prefixes):
         seq_probs = np.stack(seq_probs, 1)
@@ -247,7 +252,7 @@ class Runner:
         if data['bounds']['wrapped']:
             epoch += 1
 
-        seq_probs, seq_values, prefixes = self.mcts(data)
+        seq_probs, seq_values, prefixes = self.mcts(data, epoch)
         self.replay_buffer.extend(
             zip(
                 [None] * self.opt.batch_size if data['fc_feats'] is None else
@@ -305,4 +310,5 @@ class Trainer(object):
                                   targ_vs, gen_result)
             loss.backward()
             self.optimizer.step()
+            print(loss.item())
         return iteration + k, epoch
