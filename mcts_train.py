@@ -163,10 +163,9 @@ def train(opt):
     ##########################
     #  Build optimizer
     ##########################
-    optimizer = torch.optim.AdamW(
-        trainer.parameters(),
-        lr=5e-6,
-        weight_decay=1e-4)
+    optimizer = torch.optim.AdamW(trainer.parameters(),
+                                  lr=5e-6,
+                                  weight_decay=1e-4)
 
     # Load the optimizer
     if opt.start_from is not None and os.path.isfile(
@@ -194,27 +193,18 @@ def train(opt):
     #if opt.load_best_score == 1:
     #    best_val_score = infos.get('best_val_score', None)
 
-    best_val_score = eval_func(opt,
-                               trainer,
-                               loader,
-                               split='val',
-                               beam_size=1)
-    print("best_val_score/beam_size=1: {}".format(best_val_score))
-    #exit(0)
-    #best_val_score = 0.0
-
     init_scorer(opt.cached_tokens)
+    train_model = Trainer(optimizer, trainer, opt=opt, loader=loader)
+    #best_val_score = eval_func(opt, trainer, loader, split='val', beam_size=1)
+    eval_data = self.loader.get_batch('val')
+    best_val_score = train_model.runner.evaluate_greedy(eval_data)
+    print("best_val_score/beam_size=1: {}".format(best_val_score))
 
     # Start training
     opt.save_checkpoint_every = 16
 
     logger = setup_logging("log_{}".format(opt.id))
     logger.info("opt.batch_size: {}".format(opt.batch_size))
-    trainer.train()
-    train_model = Trainer(optimizer,
-                          trainer,
-                          opt=opt,
-                          loader=loader)
     try:
         while True:
             # Stop if reaching max epochs
@@ -230,11 +220,12 @@ def train(opt):
 
             # make evaluation on validation set, and save model
             if iteration % opt.save_checkpoint_every == 0:
-                current_score = eval_func(opt,
-                                          trainer,
-                                          loader,
-                                          split='val',
-                                          beam_size=1)
+                current_score = train_model.runner.evaluate_mcts(eval_data)
+                #current_score = eval_func(opt,
+                #                          trainer,
+                #                          loader,
+                #                          split='val',
+                #                          beam_size=1)
                 #test_score = eval_func(opt,
                 #                       trainer,
                 #                       loader,
@@ -250,11 +241,11 @@ def train(opt):
                 if best_val_score is None or current_score > best_val_score:
                     best_val_score = current_score
                     infos['best_val_score'] = best_val_score
-                    utils.save_checkpoint(opt,
-                                          trainer,
-                                          infos,
-                                          optimizer,
-                                          append='best')
+                    #utils.save_checkpoint(opt,
+                    #                      trainer,
+                    #                      infos,
+                    #                      optimizer,
+                    #                      append='best')
 
     except (RuntimeError, KeyboardInterrupt):
         pass

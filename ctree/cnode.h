@@ -50,6 +50,7 @@ class CRoots {
     void prepare_no_noise(const std::vector<std::vector<float>> &policies);
     std::vector<std::vector<int>> get_trajectories();
     std::vector<std::vector<int>> get_distributions();
+    std::vector<float> get_values();
     void update_with_move(int root_idx, int act_idx,
                           tools::CMinMaxStatsList *min_max_stats_lst,
                           float discount);

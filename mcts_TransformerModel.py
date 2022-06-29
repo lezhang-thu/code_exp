@@ -386,7 +386,7 @@ class TransformerModel(AttModel):
         out = self.model(att_feats, seq, att_masks, seq_mask)
 
         outputs = self.model.generator(out)
-        return outputs
+        return (outputs, self.value(out.detach()))
         # return torch.cat([_.unsqueeze(1) for _ in outputs], 1)
 
     def core(self, it, fc_feats_ph, att_feats_ph, memory, state, mask):

@@ -49,6 +49,9 @@ cdef class Roots:
     def get_distributions(self):
         return self.roots[0].get_distributions()
 
+    def get_values(self):
+        return self.roots[0].get_values()
+
     def update_with_move(
         self, 
         int root_idx, int act_idx, 

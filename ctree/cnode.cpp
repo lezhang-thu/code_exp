@@ -176,6 +176,14 @@ void CRoots::release_forest() {
     for (int i = 0; i < this->root_num; ++i) this->roots[i]->release_tree();
 }
 
+std::vector<float> CRoots::get_values() {
+    std::vector<float> values;
+    for (int i = 0; i < this->root_num; ++i) {
+        values.push_back(this->roots[i]->value());
+    }
+    return values;
+}
+
 //*********************************************************
 
 void update_tree_q(CNode *root, tools::CMinMaxStats &min_max_stats,
@@ -206,7 +214,11 @@ void cback_propagate(std::vector<CNode *> &search_path,
         min_max_stats.update(discount * node->value());
         value *= discount;
     }
-    if (search_path.size() > 0) search_path.front()->visit_count += 1;
+    if (search_path.size() > 0) {
+        CNode *root = search_path.front();
+        root->visit_count += 1;
+        root->value_sum += value;
+    }
 }
 
 void cbatch_back_propagate(float discount, const std::vector<float> &values,
