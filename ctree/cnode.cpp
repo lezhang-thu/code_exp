@@ -245,7 +245,7 @@ int cselect_child(CNode *root, tools::CMinMaxStats &min_max_stats,
         CNode *child = root->get_child(a);
         // should be `root->visit_count - 1`
         // in AlphaZero it is `parent.visit_count`
-        float t_score = cucb_score(child, min_max_stats, root->visit_count - 1,
+        float t_score = cucb_score(child, min_max_stats, root->visit_count,
                                    pb_c_base, pb_c_init, discount);
 
         if (max_score < t_score) {
